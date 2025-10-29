@@ -46,20 +46,19 @@ pipeline {
                 echo '🔧 التحقق من البيئة المتوفرة...'
                 sh '''
                     echo "=== معلومات البيئة ==="
-                    echo "PHP Version:"
-                    php --version 2>/dev/null || echo "⚠️ PHP غير مثبت"
-                    echo ""
-                    echo "Node Version:"
-                    node --version 2>/dev/null || echo "⚠️ Node.js غير مثبت"
-                    echo ""
-                    echo "NPM Version:"
-                    npm --version 2>/dev/null || echo "⚠️ NPM غير مثبت"
-                    echo ""
-                    echo "Composer Version:"
-                    composer --version 2>/dev/null || echo "⚠️ Composer غير مثبت"
-                    echo ""
                     echo "Docker Version:"
-                    docker --version 2>/dev/null || echo "⚠️ Docker غير مثبت"
+                    if docker --version 2>/dev/null; then
+                        docker --version
+                        echo "✅ Docker متوفر"
+                    else
+                        echo "❌ Docker غير مثبت!"
+                        echo ""
+                        echo "⚠️ تحذير: جميع المراحل تحتاج إلى Docker"
+                        echo "يرجى تثبيت Docker في Jenkins server"
+                        exit 1
+                    fi
+                    echo ""
+                    echo "PHP و Node.js سيتم تثبيتهما داخل Docker containers"
                 '''
             }
         }
@@ -70,15 +69,15 @@ pipeline {
                     steps {
                         echo '🔍 فحص جودة كود JavaScript/TypeScript...'
                         sh '''
-                            # تثبيت dependencies إذا لم تكن موجودة
-                            if [ ! -d "node_modules" ]; then
-                                echo "📦 تثبيت npm dependencies..."
-                                npm ci
-                            fi
-
-                            # فحص ESLint
-                            echo "🔍 تشغيل ESLint..."
-                            npm run lint || echo "⚠️ وجدت تحذيرات في ESLint"
+                            # استخدام Docker container يحتوي على Node.js
+                            docker run --rm -v "$(pwd):/workspace" -w /workspace node:18-alpine sh -c "
+                                if [ ! -d node_modules ]; then
+                                    echo '📦 تثبيت npm dependencies...'
+                                    npm ci
+                                fi
+                                echo '🔍 تشغيل ESLint...'
+                                npm run lint || echo '⚠️ وجدت تحذيرات في ESLint'
+                            """ || echo "⚠️ فشل في فحص ESLint - تأكد من تثبيت Docker"
                         '''
                     }
                 }
@@ -87,12 +86,13 @@ pipeline {
                     steps {
                         echo '📝 فحص تنسيق الكود...'
                         sh '''
-                            if [ ! -d "node_modules" ]; then
-                                npm ci
-                            fi
-
-                            echo "📝 فحص تنسيق الكود..."
-                            npm run format:check || echo "⚠️ وجدت مشاكل في التنسيق"
+                            docker run --rm -v "$(pwd):/workspace" -w /workspace node:18-alpine sh -c "
+                                if [ ! -d node_modules ]; then
+                                    npm ci
+                                fi
+                                echo '📝 فحص تنسيق الكود...'
+                                npm run format:check || echo '⚠️ وجدت مشاكل في التنسيق'
+                            """ || echo "⚠️ فشل في فحص التنسيق - تأكد من تثبيت Docker"
                         '''
                     }
                 }
@@ -101,12 +101,13 @@ pipeline {
                     steps {
                         echo '🔷 فحص أنواع TypeScript...'
                         sh '''
-                            if [ ! -d "node_modules" ]; then
-                                npm ci
-                            fi
-
-                            echo "🔷 فحص أنواع TypeScript..."
-                            npx vue-tsc --noEmit || echo "⚠️ وجدت أخطاء في أنواع TypeScript"
+                            docker run --rm -v "$(pwd):/workspace" -w /workspace node:18-alpine sh -c "
+                                if [ ! -d node_modules ]; then
+                                    npm ci
+                                fi
+                                echo '🔷 فحص أنواع TypeScript...'
+                                npx vue-tsc --noEmit || echo '⚠️ وجدت أخطاء في أنواع TypeScript'
+                            """ || echo "⚠️ فشل في فحص TypeScript - تأكد من تثبيت Docker"
                         '''
                     }
                 }
@@ -117,11 +118,19 @@ pipeline {
             steps {
                 echo '📦 تثبيت dependencies...'
                 sh '''
+                    # تثبيت Composer dependencies باستخدام Docker
                     echo "📦 تثبيت Composer dependencies..."
-                    composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev || composer install --no-interaction --prefer-dist
+                    docker run --rm -v "$(pwd):/workspace" -w /workspace \
+                        composer:latest install --no-interaction --prefer-dist --optimize-autoloader --no-dev || \
+                        docker run --rm -v "$(pwd):/workspace" -w /workspace \
+                        composer:latest install --no-interaction --prefer-dist || \
+                        echo "⚠️ فشل تثبيت Composer dependencies - تأكد من تثبيت Docker"
 
+                    # تثبيت NPM dependencies باستخدام Docker
                     echo "📦 تثبيت NPM dependencies..."
-                    npm ci
+                    docker run --rm -v "$(pwd):/workspace" -w /workspace \
+                        node:18-alpine npm ci || \
+                        echo "⚠️ فشل تثبيت NPM dependencies - تأكد من تثبيت Docker"
                 '''
             }
         }
@@ -136,16 +145,18 @@ pipeline {
                         cp env.example .env
                     fi
 
-                    # توليد Application Key
-                    echo "🔑 توليد Application Key..."
-                    php artisan key:generate --force || echo "⚠️ تم تجاهل توليد المفتاح"
-
-                    # مسح Cache
-                    echo "🧹 مسح Cache..."
-                    php artisan config:clear || true
-                    php artisan cache:clear || true
-                    php artisan route:clear || true
-                    php artisan view:clear || true
+                    # إعداد Laravel باستخدام Docker container
+                    docker run --rm -v "$(pwd):/var/www/html" -w /var/www/html \
+                        php:8.4-cli sh -c "
+                            apt-get update -qq && apt-get install -y -qq git unzip libzip-dev libpng-dev libonig-dev libxml2-dev > /dev/null 2>&1
+                            docker-php-ext-install -q zip pdo_mysql mbstring exif pcntl bcmath gd 2>/dev/null || true
+                            curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+                            php artisan key:generate --force || echo '⚠️ تم تجاهل توليد المفتاح'
+                            php artisan config:clear || true
+                            php artisan cache:clear || true
+                            php artisan route:clear || true
+                            php artisan view:clear || true
+                        " || echo "⚠️ فشل في إعداد Laravel - تأكد من تثبيت Docker"
                 '''
             }
         }
@@ -155,7 +166,11 @@ pipeline {
                 echo '🏗️ بناء ملفات Frontend...'
                 sh '''
                     echo "🏗️ بناء ملفات Vue.js و TypeScript..."
-                    npm run build
+                    docker run --rm -v "$(pwd):/workspace" -w /workspace \
+                        node:18-alpine npm run build || {
+                        echo "⚠️ فشل بناء Frontend - تأكد من تثبيت Docker"
+                        exit 1
+                    }
 
                     echo "✅ تم بناء ملفات Frontend بنجاح"
                     ls -lah public/build/ || echo "⚠️ مجلد build غير موجود"
@@ -170,12 +185,19 @@ pipeline {
                     # إعداد بيئة الاختبار
                     echo "⚙️ إعداد بيئة الاختبار..."
 
-                    # تشغيل PHPUnit tests
+                    # تشغيل PHPUnit tests باستخدام Docker
                     echo "🧪 تشغيل PHPUnit tests..."
-                    php artisan test --env=testing || echo "⚠️ بعض الاختبارات فشلت"
+                    docker run --rm -v "$(pwd):/var/www/html" -w /var/www/html \
+                        php:8.4-cli sh -c "
+                            apt-get update -qq && apt-get install -y -qq git unzip libzip-dev libpng-dev libonig-dev libxml2-dev > /dev/null 2>&1
+                            docker-php-ext-install -q zip pdo_mysql mbstring exif pcntl bcmath gd 2>/dev/null || true
+                            curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+                            composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev 2>/dev/null || true
+                            php artisan test --env=testing || echo '⚠️ بعض الاختبارات فشلت'
+                        " || echo "⚠️ فشل في تشغيل الاختبارات - تأكد من تثبيت Docker"
 
                     # يمكن إضافة اختبارات Frontend هنا إذا كانت موجودة
-                    # npm test || echo "⚠️ بعض اختبارات Frontend فشلت"
+                    # docker run --rm -v "${PWD}:/workspace" -w /workspace node:18-alpine npm test || echo "⚠️ بعض اختبارات Frontend فشلت"
                 '''
             }
             post {
@@ -268,11 +290,13 @@ pipeline {
                 sh '''
                     # فحص Composer dependencies للأمان
                     echo "🔒 فحص Composer dependencies..."
-                    composer audit || echo "⚠️ وجدت مشاكل أمنية في Composer dependencies"
+                    docker run --rm -v "$(pwd):/var/www/html" -w /var/www/html \
+                        composer:latest audit || echo "⚠️ وجدت مشاكل أمنية في Composer dependencies أو Docker غير مثبت"
 
                     # فحص NPM dependencies للأمان
                     echo "🔒 فحص NPM dependencies..."
-                    npm audit || echo "⚠️ وجدت مشاكل أمنية في NPM dependencies"
+                    docker run --rm -v "$(pwd):/workspace" -w /workspace \
+                        node:18-alpine npm audit || echo "⚠️ وجدت مشاكل أمنية في NPM dependencies أو Docker غير مثبت"
                 '''
             }
         }
@@ -330,12 +354,14 @@ pipeline {
         always {
             echo '🧹 تنظيف الملفات المؤقتة...'
             sh """
-                # تنظيف Docker images القديمة
-                echo "🧹 تنظيف Docker images القديمة..."
-                docker images | grep "${env.DOCKER_IMAGE_NAME}" | tail -n +6 | awk '{print \$3}' | xargs -r docker rmi || true
-
-                # تنظيف النظام
-                docker system prune -f || true
+                # تنظيف Docker images القديمة (إذا كان Docker مثبت)
+                if command -v docker &> /dev/null; then
+                    echo "🧹 تنظيف Docker images القديمة..."
+                    docker images | grep "${env.DOCKER_IMAGE_NAME}" | tail -n +6 | awk '{print \$3}' | xargs -r docker rmi 2>/dev/null || true
+                    docker system prune -f 2>/dev/null || true
+                else
+                    echo "ℹ️ Docker غير مثبت - تخطي تنظيف Docker"
+                fi
 
                 # تنظيف node_modules (اختياري)
                 # rm -rf node_modules || true
