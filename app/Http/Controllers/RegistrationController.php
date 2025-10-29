@@ -47,7 +47,7 @@ class RegistrationController extends Controller
             'password_confirmation' => $request->password_confirmation,
         ];
 
-        // Call user-service to register the user
+        // Call user-service to register the userr
         $result = $this->userService->register($userData);
 
         if ($result['success']) {
