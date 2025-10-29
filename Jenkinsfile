@@ -20,7 +20,6 @@ pipeline {
         ))
         timeout(time: 45, unit: 'MINUTES')
         timestamps()
-        ansiColor('xterm')
     }
 
     stages {
@@ -193,7 +192,8 @@ pipeline {
                         reportFiles: '*.html',
                         reportName: 'Test Report',
                         allowMissing: true,
-                        keepAll: true
+                        keepAll: true,
+                        alwaysLinkToLastBuild: true
                     ])
                 }
             }
@@ -329,19 +329,17 @@ pipeline {
     post {
         always {
             echo '🧹 تنظيف الملفات المؤقتة...'
-            script {
-                sh '''
-                    # تنظيف Docker images القديمة
-                    echo "🧹 تنظيف Docker images القديمة..."
-                    docker images | grep "${DOCKER_IMAGE_NAME}" | tail -n +6 | awk '{print $3}' | xargs -r docker rmi || true
+            sh """
+                # تنظيف Docker images القديمة
+                echo "🧹 تنظيف Docker images القديمة..."
+                docker images | grep "${env.DOCKER_IMAGE_NAME}" | tail -n +6 | awk '{print \$3}' | xargs -r docker rmi || true
 
-                    # تنظيف النظام
-                    docker system prune -f || true
+                # تنظيف النظام
+                docker system prune -f || true
 
-                    # تنظيف node_modules (اختياري)
-                    # rm -rf node_modules || true
-                '''
-            }
+                # تنظيف node_modules (اختياري)
+                # rm -rf node_modules || true
+            """
 
             // حفظ الملفات المهمة
             archiveArtifacts(
@@ -361,24 +359,22 @@ pipeline {
             ║  ✅ Pipeline اكتمل بنجاح!               ║
             ╚══════════════════════════════════════════╝
             '''
-            script {
-                // إرسال إشعار بالنجاح (يمكن تفعيله)
-                /*
-                emailext(
-                    subject: "✅ نجح البناء: ${env.APP_NAME} #${env.BUILD_NUMBER}",
-                    body: """
-                        <h2>✅ نجح البناء!</h2>
-                        <p><strong>الخدمة:</strong> ${env.APP_NAME}</p>
-                        <p><strong>رقم البناء:</strong> ${env.BUILD_NUMBER}</p>
-                        <p><strong>الفرع:</strong> ${env.GIT_BRANCH_NAME}</p>
-                        <p><strong>Commit:</strong> ${env.GIT_COMMIT_SHORT}</p>
-                        <p><strong>رابط البناء:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                    """,
-                    mimeType: 'text/html',
-                    to: "${env.CHANGE_AUTHOR_EMAIL ?: 'dev@example.com'}"
-                )
-                */
-            }
+            // إرسال إشعار بالنجاح (يمكن تفعيله)
+            /*
+            emailext(
+                subject: "✅ نجح البناء: ${env.APP_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                    <h2>✅ نجح البناء!</h2>
+                    <p><strong>الخدمة:</strong> ${env.APP_NAME}</p>
+                    <p><strong>رقم البناء:</strong> ${env.BUILD_NUMBER}</p>
+                    <p><strong>الفرع:</strong> ${env.GIT_BRANCH_NAME}</p>
+                    <p><strong>Commit:</strong> ${env.GIT_COMMIT_SHORT}</p>
+                    <p><strong>رابط البناء:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                """,
+                mimeType: 'text/html',
+                to: "${env.CHANGE_AUTHOR_EMAIL ?: 'dev@example.com'}"
+            )
+            */
         }
 
         failure {
@@ -387,25 +383,23 @@ pipeline {
             ║  ❌ Pipeline فشل!                       ║
             ╚══════════════════════════════════════════╝
             '''
-            script {
-                // إرسال إشعار بالفشل (يمكن تفعيله)
-                /*
-                emailext(
-                    subject: "❌ فشل البناء: ${env.APP_NAME} #${env.BUILD_NUMBER}",
-                    body: """
-                        <h2>❌ فشل البناء!</h2>
-                        <p><strong>الخدمة:</strong> ${env.APP_NAME}</p>
-                        <p><strong>رقم البناء:</strong> ${env.BUILD_NUMBER}</p>
-                        <p><strong>الفرع:</strong> ${env.GIT_BRANCH_NAME}</p>
-                        <p><strong>Commit:</strong> ${env.GIT_COMMIT_SHORT}</p>
-                        <p><strong>رابط البناء:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                        <p><strong>Console Output:</strong> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
-                    """,
-                    mimeType: 'text/html',
-                    to: "${env.CHANGE_AUTHOR_EMAIL ?: 'dev@example.com'}"
-                )
-                */
-            }
+            // إرسال إشعار بالفشل (يمكن تفعيله)
+            /*
+            emailext(
+                subject: "❌ فشل البناء: ${env.APP_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                    <h2>❌ فشل البناء!</h2>
+                    <p><strong>الخدمة:</strong> ${env.APP_NAME}</p>
+                    <p><strong>رقم البناء:</strong> ${env.BUILD_NUMBER}</p>
+                    <p><strong>الفرع:</strong> ${env.GIT_BRANCH_NAME}</p>
+                    <p><strong>Commit:</strong> ${env.GIT_COMMIT_SHORT}</p>
+                    <p><strong>رابط البناء:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                    <p><strong>Console Output:</strong> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
+                """,
+                mimeType: 'text/html',
+                to: "${env.CHANGE_AUTHOR_EMAIL ?: 'dev@example.com'}"
+            )
+            */
         }
 
         unstable {
@@ -413,4 +407,3 @@ pipeline {
         }
     }
 }
-
