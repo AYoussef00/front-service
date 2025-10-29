@@ -44,22 +44,44 @@ pipeline {
         stage('Environment Check') {
             steps {
                 echo '🔧 التحقق من البيئة المتوفرة...'
-                sh '''
-                    echo "=== معلومات البيئة ==="
-                    echo "Docker Version:"
-                    if docker --version 2>/dev/null; then
-                        docker --version
+                script {
+                    def dockerAvailable = sh(
+                        script: 'docker --version 2>/dev/null && echo "yes" || echo "no"',
+                        returnStdout: true
+                    ).trim()
+
+                    if (dockerAvailable == "no") {
+                        error("""
+                        ❌ Docker غير متاح في Jenkins!
+
+                        ⚠️ إذا كان Jenkins يعمل داخل Docker container على macOS:
+
+                        1. تأكد من أن Jenkins container مرتبط بـ Docker socket:
+                           docker run -d \\
+                             --name jenkins \\
+                             -v /var/run/docker.sock:/var/run/docker.sock \\
+                             -v jenkins_home:/var/jenkins_home \\
+                             -p 8080:8080 \\
+                             jenkins/jenkins:lts
+
+                        2. أو على macOS، استخدم Docker Desktop socket:
+                           docker run -d \\
+                             --name jenkins \\
+                             -v /var/run/docker.sock:/var/run/docker.sock \\
+                             -v jenkins_home:/var/jenkins_home \\
+                             -p 8080:8080 \\
+                             jenkins/jenkins:lts
+
+                        3. تأكد من أن Docker Desktop يعمل
+
+                        4. أو استخدم Jenkins مباشرة على macOS بدون Docker container
+                        """)
+                    } else {
                         echo "✅ Docker متوفر"
-                    else
-                        echo "❌ Docker غير مثبت!"
-                        echo ""
-                        echo "⚠️ تحذير: جميع المراحل تحتاج إلى Docker"
-                        echo "يرجى تثبيت Docker في Jenkins server"
-                        exit 1
-                    fi
-                    echo ""
-                    echo "PHP و Node.js سيتم تثبيتهما داخل Docker containers"
-                '''
+                        sh 'docker --version'
+                        echo "ℹ️ PHP و Node.js سيتم تثبيتهما داخل Docker containers"
+                    }
+                }
             }
         }
 
